@@ -115,18 +115,11 @@ local function UpdateSpellCooldown(spellID, cooldownData)
     
     local cooldownInfo = C_Spell.GetSpellCooldown(spellID)
     
-    -- In Midnight, GetSpellCooldown returns a cooldown info object, not multiple values
-    local startTime, duration, enabled, modRate = 0, 0, 1, 1
-    if cooldownInfo then
-        startTime = cooldownInfo.startTime or 0
-        duration = cooldownInfo.duration or 0
-        enabled = cooldownInfo.isEnabled or 1
-        modRate = cooldownInfo.modRate or 1
-    end
-    
-    -- Only show cooldowns longer than 2 seconds (filters out GCD which is ~1.2 seconds)
-    local GCD_THRESHOLD = 2.0
-    local isRealCooldown = (startTime > 0 and duration and duration > GCD_THRESHOLD)
+    -- In Midnight, only isOnGCD is reliably accessible
+    -- If isOnGCD is true, it's just the global cooldown - don't display
+    -- If isOnGCD is false or nil, there's a real cooldown - display it
+    local isOnGCD = (cooldownInfo and cooldownInfo.isOnGCD) or false
+    local isRealCooldown = not isOnGCD
     
     -- Only update if the cooldown state has changed
     local lastState = LAST_COOLDOWN_STATE[spellID]
@@ -135,14 +128,26 @@ local function UpdateSpellCooldown(spellID, cooldownData)
     if isRealCooldown ~= wasOnCooldown then
         -- State changed, update it
         LAST_COOLDOWN_STATE[spellID] = {
-            isOnCooldown = isRealCooldown,
-            startTime = startTime,
-            duration = duration
+            isOnCooldown = isRealCooldown
         }
         
         if isRealCooldown then
-            DebugPrint("Spell " .. spellID .. " cooldown started: duration=" .. duration)
-            cooldownFrame:SetCooldown(startTime, duration, modRate)
+            DebugPrint("Spell " .. spellID .. " cooldown started")
+            -- SetCooldown needs startTime, duration, modRate
+            -- Try to safely extract them, but they may be secret
+            local startTime = cooldownInfo and cooldownInfo.startTime or 0
+            local duration = cooldownInfo and cooldownInfo.duration or 0
+            local modRate = cooldownInfo and cooldownInfo.modRate or 1
+            
+            -- Use pcall to safely call SetCooldown in case values are inaccessible
+            local success = pcall(function()
+                cooldownFrame:SetCooldown(startTime, duration, modRate)
+            end)
+            
+            if not success then
+                DebugPrint("Could not set cooldown with restricted values, clearing instead")
+                cooldownFrame:Clear()
+            end
         else
             DebugPrint("Spell " .. spellID .. " cooldown ended")
             cooldownFrame:Clear()
@@ -266,13 +271,13 @@ local function InitializeWorker(self)
         end
     end);
     
-    -- OnUpdate script to periodically check if cooldowns have changed
-    local lastUpdateTime = 0
-    local updateInterval = 0.1  -- Check every 100ms
-    f_container:SetScript("OnUpdate", function(self, elapsed)
-        lastUpdateTime = lastUpdateTime + elapsed
-        if lastUpdateTime >= updateInterval then
-            lastUpdateTime = 0
+    -- Register for SPELL_UPDATE_COOLDOWN events (event-driven instead of polling)
+    -- This event fires with unrestricted access to cooldown data
+    f_container:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+    f_container:SetScript("OnEvent", function(self, event, spellID)
+        if event == "SPELL_UPDATE_COOLDOWN" then
+            -- Update all tracked spells when any cooldown changes
+            -- We check all tracked spells because a single event might affect multiple
             UpdateAllCooldowns()
         end
     end);
