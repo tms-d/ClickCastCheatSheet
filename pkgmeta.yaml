@@ -1,5 +1,4 @@
 package-as: ClickCastCheatSheet
 ignore:
   - .github
-  - pkgmeta.yaml
   - README.md
