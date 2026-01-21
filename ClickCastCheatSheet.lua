@@ -23,6 +23,7 @@ local ZOOM_MAX_COORD = 0.90;
 local B_SIZE = BASE_ICON_SIZE;
 local M_SIZE = MOD_ICON_SIZE;
 local isInitialized = false;
+local SCALE_MULTIPLIER = 1.0;
 -- Border thickness in pixels around each icon
 local BORDER = 1;
 -- Debug mode flag
@@ -232,6 +233,12 @@ local function InitializeWorker(self)
         DebugPrint("Loaded debug mode from saved variables: " .. tostring(DEBUG))
     end
     
+    -- Load scale multiplier from saved variables
+    if type(ClickCastCheatSheetDB.scale) == "number" then
+        SCALE_MULTIPLIER = ClickCastCheatSheetDB.scale
+        DebugPrint("Loaded scale from saved variables: " .. SCALE_MULTIPLIER)
+    end
+    
     local savedX, savedY = ClickCastCheatSheetDB.x, ClickCastCheatSheetDB.y;
     if type(savedX) == "number" and type(savedY) == "number" then
         f_container:SetPoint("CENTER", UIParent, "CENTER", savedX, savedY);
@@ -299,40 +306,42 @@ local function InitializeWorker(self)
             -- 2. Create the Icon Frame
             -- Create an icon frame slightly larger than the icon so we can draw a border
             -- without shrinking the visible icon area.
+            local scaledFrameSize = Round(config.frameSize * SCALE_MULTIPLIER)
+            local scaledBorder = Round(BORDER * SCALE_MULTIPLIER)
             local iconFrame = CreateFrame("Frame", ADDON_NAME .. key .. "IconFrame", f_container);
-            iconFrame:SetSize(config.frameSize + (BORDER * 2), config.frameSize + (BORDER * 2));
+            iconFrame:SetSize(scaledFrameSize + (scaledBorder * 2), scaledFrameSize + (scaledBorder * 2));
             -- Create 4 solid-color textures to form a 2px black border inside the frame
             local top = iconFrame:CreateTexture(nil, "OVERLAY")
             top:SetColorTexture(0,0,0,1)
             top:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", 0, 0)
             top:SetPoint("TOPRIGHT", iconFrame, "TOPRIGHT", 0, 0)
-            top:SetHeight(BORDER)
+            top:SetHeight(scaledBorder)
 
             local bottom = iconFrame:CreateTexture(nil, "OVERLAY")
             bottom:SetColorTexture(0,0,0,1)
             bottom:SetPoint("BOTTOMLEFT", iconFrame, "BOTTOMLEFT", 0, 0)
             bottom:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", 0, 0)
-            bottom:SetHeight(BORDER)
+            bottom:SetHeight(scaledBorder)
 
             local left = iconFrame:CreateTexture(nil, "OVERLAY")
             left:SetColorTexture(0,0,0,1)
             left:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", 0, 0)
             left:SetPoint("BOTTOMLEFT", iconFrame, "BOTTOMLEFT", 0, 0)
-            left:SetWidth(BORDER)
+            left:SetWidth(scaledBorder)
 
             local right = iconFrame:CreateTexture(nil, "OVERLAY")
             right:SetColorTexture(0,0,0,1)
             right:SetPoint("TOPRIGHT", iconFrame, "TOPRIGHT", 0, 0)
             right:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", 0, 0)
-            right:SetWidth(BORDER)
+            right:SetWidth(scaledBorder)
             
             -- Calculate Final Position
             local baseAnchor = BASE_ANCHORS[button];
             local totalX = baseAnchor.x + (config.x_rel or 0);
             local totalY = baseAnchor.y + (config.y_rel or 0);
-            -- Round to whole pixels to avoid renderer rounding causing 1px asymmetry
-            totalX = Round(totalX)
-            totalY = Round(totalY)
+            -- Apply scale multiplier to positions
+            totalX = Round(totalX * SCALE_MULTIPLIER)
+            totalY = Round(totalY * SCALE_MULTIPLIER)
 
             iconFrame:SetPoint("CENTER", f_container, "CENTER", totalX, totalY);
             iconFrame:SetFrameLevel(f_container:GetFrameLevel() + 1);
@@ -341,8 +350,8 @@ local function InitializeWorker(self)
             local texture = iconFrame:CreateTexture(nil, "BACKGROUND");
             -- Place the icon texture inset by the border thickness so the icon keeps its
             -- original configured size while the border occupies the extra padding.
-            texture:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", BORDER, -BORDER);
-            texture:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -BORDER, BORDER);
+            texture:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", scaledBorder, -scaledBorder);
+            texture:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -scaledBorder, scaledBorder);
             texture:SetTexture(ICON_TEXTURE);
             -- Apply the zoom configuration
             texture:SetTexCoord(ZOOM_MIN_COORD, ZOOM_MAX_COORD, ZOOM_MIN_COORD, ZOOM_MAX_COORD);
@@ -431,6 +440,118 @@ SlashCmdList["CLICKCASTCHEATSHEET"] = HandleSlashCommand
 -- EVENT REGISTRATION
 -- =========================================================================
 
+-- =========================================================================
+-- SETTINGS PANEL CREATION
+-- =========================================================================
+
+local function ReinitializeFrames()
+    -- Hide and release the old container frame
+    local containerName = ADDON_NAME .. "ContainerFrame"
+    local frame = _G[containerName]
+    if frame then
+        frame:Hide()
+        frame:UnregisterAllEvents()
+        frame:ClearAllPoints()
+        frame:SetParent(nil)
+        _G[containerName] = nil  -- Remove from global namespace so CreateFrame creates a fresh one
+    end
+    
+    -- Clear tracking tables
+    isInitialized = false
+    table.wipe(SPELL_COOLDOWNS)
+    table.wipe(LAST_COOLDOWN_STATE)
+    
+    -- Reinitialize with new scale
+    InitializeWorker(CreateFrame("Frame"))
+end
+
+local function CreateSettingsPanel()
+    local container = CreateFrame("Frame");
+    container:SetSize(600, 150);
+    
+    -- Debug mode checkbox
+    local debugCheckbox = CreateFrame("CheckButton", nil, container);
+    debugCheckbox:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -10);
+    debugCheckbox:SetSize(24, 24);
+    
+    -- Create checkbox texture
+    debugCheckbox:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up");
+    debugCheckbox:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down");
+    debugCheckbox:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight");
+    debugCheckbox:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check");
+    debugCheckbox:SetDisabledCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check-Disabled");
+    
+    local debugLabel = container:CreateFontString(nil, "OVERLAY", "GameFontNormal");
+    debugLabel:SetPoint("LEFT", debugCheckbox, "RIGHT", 10, 0);
+    debugLabel:SetText("Enable Debug Mode");
+    
+    -- Update checkbox from saved variables
+    local function UpdateDebugCheckbox()
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
+        debugCheckbox:SetChecked(ClickCastCheatSheetDB.debugMode or false);
+    end
+    
+    -- Handle checkbox changes
+    debugCheckbox:SetScript("OnClick", function(self)
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
+        DEBUG = self:GetChecked();
+        ClickCastCheatSheetDB.debugMode = DEBUG;
+        if DEBUG then
+            print(ADDON_NAME .. ": Debug mode enabled");
+        else
+            print(ADDON_NAME .. ": Debug mode disabled");
+        end
+    end);
+    
+    -- Initialize checkbox state when settings panel opens
+    debugCheckbox:SetScript("OnShow", UpdateDebugCheckbox);
+    
+    -- Scale slider
+    local scaleLabel = container:CreateFontString(nil, "OVERLAY", "GameFontNormal");
+    scaleLabel:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -50);
+    scaleLabel:SetText("Icon Scale:");
+    
+    local scaleSlider = CreateFrame("Slider", nil, container, "OptionsSliderTemplate");
+    scaleSlider:SetPoint("TOPLEFT", scaleLabel, "BOTTOMLEFT", 0, -5);
+    scaleSlider:SetWidth(200);
+    scaleSlider:SetMinMaxValues(0.5, 3.0);
+    scaleSlider:SetValueStep(0.1);
+    scaleSlider:SetObeyStepOnDrag(true);
+    
+    local scaleValueText = container:CreateFontString(nil, "OVERLAY", "GameFontNormal");
+    scaleValueText:SetPoint("LEFT", scaleSlider, "RIGHT", 10, 0);
+    scaleValueText:SetText("1.0x");
+    
+    local function UpdateScaleDisplay()
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
+        local savedScale = ClickCastCheatSheetDB.scale or 1.0
+        scaleSlider:SetValue(savedScale)
+        scaleValueText:SetText(string.format("%.1f", savedScale) .. "x")
+    end
+    
+    scaleSlider:SetScript("OnValueChanged", function(self, value, userInput)
+        if userInput then
+            SCALE_MULTIPLIER = value
+            ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
+            ClickCastCheatSheetDB.scale = value
+            scaleValueText:SetText(string.format("%.1f", value) .. "x")
+            print(ADDON_NAME .. ": Scale set to " .. string.format("%.1f", value) .. "x")
+            ReinitializeFrames()
+        end
+    end);
+    
+    -- Initialize slider state when settings panel opens
+    scaleSlider:SetScript("OnShow", UpdateScaleDisplay);
+    
+    local category = Settings.RegisterCanvasLayoutCategory(container, ADDON_NAME);
+    category.ID = ADDON_NAME;
+    Settings.RegisterAddOnCategory(category);
+end
+
+-- =========================================================================
+-- EVENT REGISTRATION
+-- =========================================================================
+
 -- Handle initialization - PLAYER_LOGIN for first load, ADDON_LOADED for reloads
 eventFrame:RegisterEvent("PLAYER_LOGIN");
 eventFrame:RegisterEvent("ADDON_LOADED");
@@ -446,5 +567,6 @@ eventFrame:SetScript("OnEvent", function(self, event, addonName)
     elseif event == "PLAYER_LOGIN" then
         -- First load - initialize when all APIs are ready
         OnInitializationEvent(self, event)
+        CreateSettingsPanel()
     end
 end);
