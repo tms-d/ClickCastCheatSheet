@@ -25,6 +25,15 @@ local M_SIZE = MOD_ICON_SIZE;
 local isInitialized = false;
 -- Border thickness in pixels around each icon
 local BORDER = 1;
+-- Debug mode flag
+local DEBUG = false;
+
+-- Helper function to print only when debug mode is enabled
+local function DebugPrint(msg)
+    if DEBUG then
+        print(ADDON_NAME .. ": " .. msg)
+    end
+end
 
 -- Helper to round to nearest integer pixel to avoid fractional-pixel alignment issues
 local function Round(n)
@@ -32,7 +41,7 @@ local function Round(n)
 end
 
 -- Saved-variables table (populated by WoW when declared in the .toc)
--- ClickCastCheatSheetDB = { x = <number>, y = <number> }
+-- ClickCastCheatSheetDB = { x = <number>, y = <number>, debugMode = <boolean> }
 
 -- Vertical displacement for modifier icons relative to the base icon center.
 local MOD_OFFSET = (B_SIZE / 2) + (M_SIZE / 2) + SPACING; 
@@ -77,7 +86,7 @@ local SPELL_CONFIG = {
 
 
 -- Create a hidden frame early to register events
-local eventFrame = CreateFrame("Frame", ADDON_NAME .. "EventFrame", UIParent); 
+local eventFrame = CreateFrame("Frame", ADDON_NAME .. "EventFrame"); 
 
 
 -- =========================================================================
@@ -89,21 +98,33 @@ local function FindBoundSpellID(buttonName, modifierName)
     
     -- Check if the C_ClickBindings API is available
     if not C_ClickBindings or not C_ClickBindings.GetProfileInfo then
+        DebugPrint("C_ClickBindings API not available")
         return nil 
     end
 
+    DebugPrint("Looking for binding: button=" .. buttonName .. ", modifier=" .. modifierName)
+
     local clickbindingsprofile = C_ClickBindings.GetProfileInfo()
     
+    if not clickbindingsprofile then
+        DebugPrint("No click bindings profile found")
+        return nil
+    end
+    
+    DebugPrint("Found " .. #clickbindingsprofile .. " click bindings total")
+
     for _, v in pairs(clickbindingsprofile) do
         -- Match the specific mouse button and modifier string ("" or "SHIFT" or "CTRL")
         if v.button == buttonName and C_ClickBindings.GetStringFromModifiers(v.modifiers) == modifierName then
             if v.type == 1 then
                 -- Type 1: Direct spell action
                 this_spellid = v.actionID
+                DebugPrint("Found direct spell binding: " .. buttonName .. " + " .. modifierName .. " -> SpellID " .. this_spellid)
                 break
             elseif v.type == 2 then
                 -- Type 2: Macro action (requires secondary lookup)
                 this_spellid = GetMacroSpell(v.actionID) 
+                DebugPrint("Found macro binding: " .. buttonName .. " + " .. modifierName .. " -> SpellID " .. tostring(this_spellid))
                 break
             end
         end
@@ -118,12 +139,16 @@ end
 -- =========================================================================
 
 local function InitializeWorker(self)
+    DebugPrint("InitializeWorker started")
+    
     -- Create the main container frame that holds all icons and is movable
     local f_container = CreateFrame("Frame", ADDON_NAME .. "ContainerFrame", UIParent); 
+    DebugPrint("Container frame created")
 
     if not C_Spell or not C_Spell.GetSpellInfo then
         error("C_Spell API not available yet. Cannot initialize.")
     end
+    DebugPrint("C_Spell API available")
 
     -- Setup the movable parent container
     f_container:SetFrameStrata("HIGH");
@@ -131,11 +156,20 @@ local function InitializeWorker(self)
     
     -- Anchor using the saved variables if present, otherwise the global offset variables
     ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
+    
+    -- Load debug mode from saved variables
+    if type(ClickCastCheatSheetDB.debugMode) == "boolean" then
+        DEBUG = ClickCastCheatSheetDB.debugMode
+        DebugPrint("Loaded debug mode from saved variables: " .. tostring(DEBUG))
+    end
+    
     local savedX, savedY = ClickCastCheatSheetDB.x, ClickCastCheatSheetDB.y;
     if type(savedX) == "number" and type(savedY) == "number" then
         f_container:SetPoint("CENTER", UIParent, "CENTER", savedX, savedY);
+        DebugPrint("Using saved position: X=" .. savedX .. ", Y=" .. savedY)
     else
         f_container:SetPoint("CENTER", UIParent, "CENTER", SCREEN_OFFSET_X, SCREEN_OFFSET_Y);
+        DebugPrint("Using default position: X=" .. SCREEN_OFFSET_X .. ", Y=" .. SCREEN_OFFSET_Y)
     end
     f_container:SetClampedToScreen(true);
     f_container:SetMovable(true);
@@ -156,14 +190,18 @@ local function InitializeWorker(self)
         end
     end);
 
+    local iconCount = 0
     for _, config in ipairs(SPELL_CONFIG) do
         local foundSpellId = FindBoundSpellID(config.button, config.modifier);
         
         -- Only proceed if a spell binding was successfully found
         if foundSpellId then
+            iconCount = iconCount + 1
             local SPELL_ID_TO_TRACK = foundSpellId;
             local key = config.key;
             local button = config.button;
+
+            DebugPrint("Found spell for " .. key .. " (button=" .. button .. ", modifier=" .. config.modifier .. "): SpellID=" .. SPELL_ID_TO_TRACK)
 
             -- 1. Get Spell Icon Texture
             local ICON_TEXTURE;
@@ -175,6 +213,7 @@ local function InitializeWorker(self)
             -- Fallback to Question Mark if icon data is missing for a found spell ID
             if not ICON_TEXTURE then
                 ICON_TEXTURE = "Interface\\ICONS\\INV_Misc_QuestionMark";
+                DebugPrint("No icon found for spell " .. SPELL_ID_TO_TRACK .. ", using fallback")
             end
 
             -- 2. Create the Icon Frame
@@ -230,10 +269,15 @@ local function InitializeWorker(self)
             texture:SetVertexColor(1, 1, 1, 1);
             
             iconFrame:Show();
+            DebugPrint("Created icon frame for " .. key)
+        else
+            DebugPrint("No binding found for " .. config.key)
         end
     end
     
+    DebugPrint("Total icons created: " .. iconCount)
     f_container:Show();
+    DebugPrint("Container frame shown")
 end
 
 
@@ -244,21 +288,67 @@ end
 local function OnInitializationEvent(self, event, ...)
     if isInitialized then return end
     
+    DebugPrint("Initialization event triggered: " .. event)
+    
     -- Execute the initialization worker inside a protected call
     local success, err = pcall(InitializeWorker, self)
 
     if success then
         isInitialized = true;
-        -- Unregister the event to prevent re-initialization
-        self:UnregisterEvent(event); 
+        print(ADDON_NAME .. " loaded successfully");
+    else
+        print(ADDON_NAME .. " initialization failed: " .. tostring(err));
+        DebugPrint("Error details: " .. tostring(err));
+    end
+    
+    -- Unregister events to prevent re-initialization unless explicitly reset
+    self:UnregisterEvent("PLAYER_LOGIN");
+end
+
+
+-- =========================================================================
+-- SLASH COMMAND HANDLER
+-- =========================================================================
+
+local function HandleSlashCommand(msg)
+    local command = msg:lower():trim()
+    
+    if command == "debug" then
+        DEBUG = not DEBUG
+        -- Save to saved variables
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
+        ClickCastCheatSheetDB.debugMode = DEBUG;
+        if DEBUG then
+            print(ADDON_NAME .. ": Debug mode enabled")
+        else
+            print(ADDON_NAME .. ": Debug mode disabled")
+        end
+    else
+        print(ADDON_NAME .. ": Unknown command: " .. msg)
+        print("Usage: /cccs debug - Toggle debug mode")
     end
 end
+
+SLASH_CLICKCASTCHEATSHEET1 = "/cccs"
+SlashCmdList["CLICKCASTCHEATSHEET"] = HandleSlashCommand
 
 
 -- =========================================================================
 -- EVENT REGISTRATION
 -- =========================================================================
 
--- PLAYER_LOGIN ensures the AddOn initializes when all APIs are available
+-- Handle initialization - PLAYER_LOGIN for first load, ADDON_LOADED for reloads
 eventFrame:RegisterEvent("PLAYER_LOGIN");
-eventFrame:SetScript("OnEvent", OnInitializationEvent);
+eventFrame:RegisterEvent("ADDON_LOADED");
+eventFrame:SetScript("OnEvent", function(self, event, addonName)
+    if event == "ADDON_LOADED" then
+        -- On /reload, reset initialization flag to allow reinit
+        if addonName == ADDON_NAME then
+            isInitialized = false
+            DebugPrint("Addon reloaded via /reload, resetting initialization")
+        end
+    elseif event == "PLAYER_LOGIN" then
+        -- First load - initialize when all APIs are ready
+        OnInitializationEvent(self, event)
+    end
+end);

@@ -1,8 +1,8 @@
-## Interface: 110200
-## Version: 1.0.0
+## Interface: 110205, 110207, 120000
+## Version: 1.1.1
 ## Title: Click Cast Cheat Sheet
 ## Notes: Click Cast Cheat Sheet
-## Author: ProfFuseigo
+## Author: Brewtalitea
 
 ClickCastCheatSheet.lua
 ## SavedVariablesPerCharacter: ClickCastCheatSheetDB
