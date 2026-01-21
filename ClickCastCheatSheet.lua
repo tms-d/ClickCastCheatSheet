@@ -84,8 +84,77 @@ local SPELL_CONFIG = {
     {key = "CTRLB5", button = "Button5", modifier = "CTRL", frameSize = M_SIZE, x_rel = 0, y_rel = -MOD_OFFSET},
 };
 
+-- Table to track spell IDs and their cooldown frames + text labels for updates
+local SPELL_COOLDOWNS = {};
+-- Track last known cooldown state to only update on changes
+local LAST_COOLDOWN_STATE = {};
 
--- Create a hidden frame early to register events
+-- Function to format cooldown time nicely
+local function FormatCooldownTime(secondsRemaining)
+    if secondsRemaining >= 60 then
+        return math.ceil(secondsRemaining / 60) .. "m"
+    else
+        return math.ceil(secondsRemaining)
+    end
+end
+
+-- Function to update a single spell cooldown display and text
+local function UpdateSpellCooldown(spellID, cooldownData)
+    if not spellID or not cooldownData then 
+        DebugPrint("UpdateSpellCooldown called with invalid args: spellID=" .. tostring(spellID) .. ", cooldownData=" .. tostring(cooldownData))
+        return 
+    end
+    
+    -- Skip GCD (spell ID 61304) - don't show any cooldown for it
+    if spellID == 61304 then
+        return
+    end
+    
+    local cooldownFrame = cooldownData.cooldownFrame
+    
+    local cooldownInfo = C_Spell.GetSpellCooldown(spellID)
+    
+    -- In Midnight, GetSpellCooldown returns a cooldown info object, not multiple values
+    local startTime, duration, enabled, modRate = 0, 0, 1, 1
+    if cooldownInfo then
+        startTime = cooldownInfo.startTime or 0
+        duration = cooldownInfo.duration or 0
+        enabled = cooldownInfo.isEnabled or 1
+        modRate = cooldownInfo.modRate or 1
+    end
+    
+    -- Only show cooldowns longer than 2 seconds (filters out GCD which is ~1.2 seconds)
+    local GCD_THRESHOLD = 2.0
+    local isRealCooldown = (startTime > 0 and duration and duration > GCD_THRESHOLD)
+    
+    -- Only update if the cooldown state has changed
+    local lastState = LAST_COOLDOWN_STATE[spellID]
+    local wasOnCooldown = lastState and lastState.isOnCooldown
+    
+    if isRealCooldown ~= wasOnCooldown then
+        -- State changed, update it
+        LAST_COOLDOWN_STATE[spellID] = {
+            isOnCooldown = isRealCooldown,
+            startTime = startTime,
+            duration = duration
+        }
+        
+        if isRealCooldown then
+            DebugPrint("Spell " .. spellID .. " cooldown started: duration=" .. duration)
+            cooldownFrame:SetCooldown(startTime, duration, modRate)
+        else
+            DebugPrint("Spell " .. spellID .. " cooldown ended")
+            cooldownFrame:Clear()
+        end
+    end
+end
+
+-- Function to update all spell cooldowns
+local function UpdateAllCooldowns()
+    for spellID, cooldownData in pairs(SPELL_COOLDOWNS) do
+        UpdateSpellCooldown(spellID, cooldownData)
+    end
+end
 local eventFrame = CreateFrame("Frame", ADDON_NAME .. "EventFrame"); 
 
 
@@ -189,6 +258,17 @@ local function InitializeWorker(self)
             ClickCastCheatSheetDB.y = py - uy;
         end
     end);
+    
+    -- OnUpdate script to periodically check if cooldowns have changed
+    local lastUpdateTime = 0
+    local updateInterval = 0.1  -- Check every 100ms
+    f_container:SetScript("OnUpdate", function(self, elapsed)
+        lastUpdateTime = lastUpdateTime + elapsed
+        if lastUpdateTime >= updateInterval then
+            lastUpdateTime = 0
+            UpdateAllCooldowns()
+        end
+    end);
 
     local iconCount = 0
     for _, config in ipairs(SPELL_CONFIG) do
@@ -268,6 +348,20 @@ local function InitializeWorker(self)
             texture:SetTexCoord(ZOOM_MIN_COORD, ZOOM_MAX_COORD, ZOOM_MIN_COORD, ZOOM_MAX_COORD);
             texture:SetVertexColor(1, 1, 1, 1);
             
+            -- 4. Create the Cooldown Widget
+            -- The cooldown widget displays a spiral overlay showing the remaining cooldown
+            local cooldownFrame = CreateFrame("Cooldown", ADDON_NAME .. key .. "Cooldown", iconFrame, "CooldownFrameTemplate");
+            cooldownFrame:SetAllPoints(iconFrame);
+            cooldownFrame:SetFrameLevel(iconFrame:GetFrameLevel() + 10);
+            
+            -- Track this spell's cooldown for updates
+            SPELL_COOLDOWNS[SPELL_ID_TO_TRACK] = {
+                cooldownFrame = cooldownFrame
+            };
+            
+            -- Initial cooldown update
+            UpdateSpellCooldown(SPELL_ID_TO_TRACK, SPELL_COOLDOWNS[SPELL_ID_TO_TRACK]);
+            
             iconFrame:Show();
             DebugPrint("Created icon frame for " .. key)
         else
@@ -345,6 +439,8 @@ eventFrame:SetScript("OnEvent", function(self, event, addonName)
         -- On /reload, reset initialization flag to allow reinit
         if addonName == ADDON_NAME then
             isInitialized = false
+            -- Clear cooldown tracking on reload
+            table.wipe(SPELL_COOLDOWNS)
             DebugPrint("Addon reloaded via /reload, resetting initialization")
         end
     elseif event == "PLAYER_LOGIN" then
