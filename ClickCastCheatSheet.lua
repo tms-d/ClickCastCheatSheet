@@ -226,7 +226,7 @@ local function InitializeWorker(self)
     DebugPrint("C_Spell API available")
 
     -- Setup the movable parent container
-    f_container:SetFrameStrata("HIGH");
+    f_container:SetFrameStrata("MEDIUM");
     f_container:SetSize(200, 200); -- Container size to encompass all 15 icons
     
     -- Anchor using the saved variables if present, otherwise the global offset variables
