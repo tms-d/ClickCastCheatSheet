@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "wow-api": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "wow-api-mcp"]
+    },
+    "wow-dev": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "wow-dev-mcp"]
+    }
+  }
+}

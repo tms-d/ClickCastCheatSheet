@@ -1,4 +1,7 @@
 package-as: ClickCastCheatSheet
 ignore:
   - .github
+  - .claude
+  - .mcp.json
+  - CLAUDE.md
   - README.md
