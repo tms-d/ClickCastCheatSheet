@@ -531,8 +531,8 @@ local function CreateSettingsPanel()
     scaleLabel:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -50);
     scaleLabel:SetText("Icon Scale:");
     
-    local scaleSlider = CreateFrame("Slider", nil, container, "UISliderTemplateWithLabels");
-    scaleSlider:SetPoint("TOPLEFT", scaleLabel, "BOTTOMLEFT", 0, -5);
+    local scaleSlider = CreateFrame("Slider", nil, container, "OptionsSliderTemplate");
+    scaleSlider:SetPoint("TOPLEFT", scaleLabel, "BOTTOMLEFT", 0, -15);
     scaleSlider:SetWidth(200);
     scaleSlider:SetMinMaxValues(0.5, 3.0);
     scaleSlider:SetValueStep(0.1);
