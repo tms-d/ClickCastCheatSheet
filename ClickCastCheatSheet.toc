@@ -3,6 +3,6 @@
 ## Title: Click Cast Cheat Sheet
 ## Notes: Click Cast Cheat Sheet
 ## Author: @project-author@
+## SavedVariablesPerCharacter: ClickCastCheatSheetDB
 
 ClickCastCheatSheet.lua
-## SavedVariablesPerCharacter: ClickCastCheatSheetDB

@@ -85,7 +85,8 @@ local SPELL_CONFIG = {
     {key = "CTRLB5", button = "Button5", modifier = "CTRL", frameSize = M_SIZE, x_rel = 0, y_rel = -MOD_OFFSET},
 };
 
--- Table to track spell IDs and their cooldown frames + text labels for updates
+-- Table to track spell IDs and their cooldown frames for updates
+-- Keyed by config key (e.g. "BUTTON3") to avoid collisions when multiple bindings use the same spell
 local SPELL_COOLDOWNS = {};
 -- Track last known cooldown state to only update on changes
 local LAST_COOLDOWN_STATE = {};
@@ -100,19 +101,15 @@ local function FormatCooldownTime(secondsRemaining)
 end
 
 -- Function to update a single spell cooldown display and text
-local function UpdateSpellCooldown(spellID, cooldownData)
-    if not spellID or not cooldownData then 
-        DebugPrint("UpdateSpellCooldown called with invalid args: spellID=" .. tostring(spellID) .. ", cooldownData=" .. tostring(cooldownData))
-        return 
-    end
-    
-    -- Skip GCD (spell ID 61304) - don't show any cooldown for it
-    if spellID == 61304 then
+local function UpdateSpellCooldown(trackingKey, cooldownData)
+    if not trackingKey or not cooldownData then
+        DebugPrint("UpdateSpellCooldown called with invalid args: key=" .. tostring(trackingKey) .. ", cooldownData=" .. tostring(cooldownData))
         return
     end
-    
+
+    local spellID = cooldownData.spellID
     local cooldownFrame = cooldownData.cooldownFrame
-    
+
     local cooldownInfo = C_Spell.GetSpellCooldown(spellID)
     
     -- In Midnight, only isOnGCD is reliably accessible
@@ -122,12 +119,12 @@ local function UpdateSpellCooldown(spellID, cooldownData)
     local isRealCooldown = not isOnGCD
     
     -- Only update if the cooldown state has changed
-    local lastState = LAST_COOLDOWN_STATE[spellID]
+    local lastState = LAST_COOLDOWN_STATE[trackingKey]
     local wasOnCooldown = lastState and lastState.isOnCooldown
     
     if isRealCooldown ~= wasOnCooldown then
         -- State changed, update it
-        LAST_COOLDOWN_STATE[spellID] = {
+        LAST_COOLDOWN_STATE[trackingKey] = {
             isOnCooldown = isRealCooldown
         }
         
@@ -157,8 +154,8 @@ end
 
 -- Function to update all spell cooldowns
 local function UpdateAllCooldowns()
-    for spellID, cooldownData in pairs(SPELL_COOLDOWNS) do
-        UpdateSpellCooldown(spellID, cooldownData)
+    for trackingKey, cooldownData in pairs(SPELL_COOLDOWNS) do
+        UpdateSpellCooldown(trackingKey, cooldownData)
     end
 end
 local eventFrame = CreateFrame("Frame", ADDON_NAME .. "EventFrame"); 
@@ -213,11 +210,11 @@ end
 -- INITIALIZATION WORKER FUNCTION
 -- =========================================================================
 
-local function InitializeWorker(self)
+local function InitializeWorker()
     DebugPrint("InitializeWorker started")
-    
+
     -- Create the main container frame that holds all icons and is movable
-    local f_container = CreateFrame("Frame", ADDON_NAME .. "ContainerFrame", UIParent); 
+    local f_container = CreateFrame("Frame", ADDON_NAME .. "ContainerFrame", UIParent);
     DebugPrint("Container frame created")
 
     if not C_Spell or not C_Spell.GetSpellInfo then
@@ -227,7 +224,8 @@ local function InitializeWorker(self)
 
     -- Setup the movable parent container
     f_container:SetFrameStrata("MEDIUM");
-    f_container:SetSize(200, 200); -- Container size to encompass all 15 icons
+    local containerSize = Round(200 * SCALE_MULTIPLIER)
+    f_container:SetSize(containerSize, containerSize);
     
     -- Anchor using the saved variables if present, otherwise the global offset variables
     ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
@@ -368,13 +366,14 @@ local function InitializeWorker(self)
             cooldownFrame:SetAllPoints(iconFrame);
             cooldownFrame:SetFrameLevel(iconFrame:GetFrameLevel() + 10);
             
-            -- Track this spell's cooldown for updates
-            SPELL_COOLDOWNS[SPELL_ID_TO_TRACK] = {
+            -- Track this spell's cooldown for updates (keyed by config key to avoid collisions)
+            SPELL_COOLDOWNS[key] = {
+                spellID = SPELL_ID_TO_TRACK,
                 cooldownFrame = cooldownFrame
             };
-            
+
             -- Initial cooldown update
-            UpdateSpellCooldown(SPELL_ID_TO_TRACK, SPELL_COOLDOWNS[SPELL_ID_TO_TRACK]);
+            UpdateSpellCooldown(key, SPELL_COOLDOWNS[key]);
             
             iconFrame:Show();
             DebugPrint("Created icon frame for " .. key)
@@ -399,7 +398,7 @@ local function OnInitializationEvent(self, event, ...)
     DebugPrint("Initialization event triggered: " .. event)
     
     -- Execute the initialization worker inside a protected call
-    local success, err = pcall(InitializeWorker, self)
+    local success, err = pcall(InitializeWorker)
 
     if success then
         isInitialized = true;
@@ -415,41 +414,22 @@ end
 
 
 -- =========================================================================
--- SLASH COMMAND HANDLER
--- =========================================================================
-
-local function HandleSlashCommand(msg)
-    local command = msg:lower():trim()
-    
-    if command == "debug" then
-        DEBUG = not DEBUG
-        -- Save to saved variables
-        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
-        ClickCastCheatSheetDB.debugMode = DEBUG;
-        if DEBUG then
-            print(ADDON_NAME .. ": Debug mode enabled")
-        else
-            print(ADDON_NAME .. ": Debug mode disabled")
-        end
-    else
-        print(ADDON_NAME .. ": Unknown command: " .. msg)
-        print("Usage: /cccs debug - Toggle debug mode")
-    end
-end
-
-SLASH_CLICKCASTCHEATSHEET1 = "/cccs"
-SlashCmdList["CLICKCASTCHEATSHEET"] = HandleSlashCommand
-
-
--- =========================================================================
--- EVENT REGISTRATION
--- =========================================================================
-
--- =========================================================================
--- SETTINGS PANEL CREATION
+-- REINITIALIZE FRAMES
 -- =========================================================================
 
 local function ReinitializeFrames()
+    -- Hide and release child icon frames
+    for _, config in ipairs(SPELL_CONFIG) do
+        local iconName = ADDON_NAME .. config.key .. "IconFrame"
+        local iconFrame = _G[iconName]
+        if iconFrame then
+            iconFrame:Hide()
+            iconFrame:ClearAllPoints()
+            iconFrame:SetParent(nil)
+            _G[iconName] = nil
+        end
+    end
+
     -- Hide and release the old container frame
     local containerName = ADDON_NAME .. "ContainerFrame"
     local frame = _G[containerName]
@@ -458,17 +438,52 @@ local function ReinitializeFrames()
         frame:UnregisterAllEvents()
         frame:ClearAllPoints()
         frame:SetParent(nil)
-        _G[containerName] = nil  -- Remove from global namespace so CreateFrame creates a fresh one
+        _G[containerName] = nil
     end
-    
+
     -- Clear tracking tables
     isInitialized = false
     table.wipe(SPELL_COOLDOWNS)
     table.wipe(LAST_COOLDOWN_STATE)
-    
-    -- Reinitialize with new scale
-    InitializeWorker(CreateFrame("Frame"))
+
+    -- Reinitialize
+    InitializeWorker()
 end
+
+
+-- =========================================================================
+-- SLASH COMMAND HANDLER
+-- =========================================================================
+
+local function HandleSlashCommand(msg)
+    local command = msg:lower():trim()
+
+    if command == "debug" then
+        DEBUG = not DEBUG
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
+        ClickCastCheatSheetDB.debugMode = DEBUG;
+        if DEBUG then
+            print(ADDON_NAME .. ": Debug mode enabled")
+        else
+            print(ADDON_NAME .. ": Debug mode disabled")
+        end
+    elseif command == "reload" then
+        print(ADDON_NAME .. ": Refreshing click bindings...")
+        ReinitializeFrames()
+    else
+        print(ADDON_NAME .. ": Unknown command: " .. msg)
+        print("Usage: /cccs debug - Toggle debug mode")
+        print("Usage: /cccs reload - Refresh click bindings")
+    end
+end
+
+SLASH_CLICKCASTCHEATSHEET1 = "/cccs"
+SlashCmdList["CLICKCASTCHEATSHEET"] = HandleSlashCommand
+
+
+-- =========================================================================
+-- SETTINGS PANEL CREATION
+-- =========================================================================
 
 local function CreateSettingsPanel()
     local container = CreateFrame("Frame");
@@ -516,7 +531,7 @@ local function CreateSettingsPanel()
     scaleLabel:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -50);
     scaleLabel:SetText("Icon Scale:");
     
-    local scaleSlider = CreateFrame("Slider", nil, container, "OptionsSliderTemplate");
+    local scaleSlider = CreateFrame("Slider", nil, container, "UISliderTemplateWithLabels");
     scaleSlider:SetPoint("TOPLEFT", scaleLabel, "BOTTOMLEFT", 0, -5);
     scaleSlider:SetWidth(200);
     scaleSlider:SetMinMaxValues(0.5, 3.0);
@@ -567,6 +582,7 @@ eventFrame:SetScript("OnEvent", function(self, event, addonName)
             isInitialized = false
             -- Clear cooldown tracking on reload
             table.wipe(SPELL_COOLDOWNS)
+            table.wipe(LAST_COOLDOWN_STATE)
             DebugPrint("Addon reloaded via /reload, resetting initialization")
         end
     elseif event == "PLAYER_LOGIN" then
