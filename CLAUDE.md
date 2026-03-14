@@ -1,4 +1,30 @@
-# ClickCastCheatSheet - Project Instructions
+# ClickCastCheatSheet
+
+## What This Is
+
+A World of Warcraft addon that displays a visual cheat sheet of the player's Click Cast bindings as spell icons on screen. It shows up to 15 icons in a compact cluster: 5 mouse buttons (Left, Right, Middle, Button4, Button5) x 3 modifier states (none, SHIFT, CTRL). Icons update automatically on spec change.
+
+This is for WoW healers/players who use Blizzard's built-in Click Casting system and want a quick visual reminder of what spell is bound to each mouse button + modifier combo.
+
+## How It Works
+
+- **Single Lua file** (`ClickCastCheatSheet.lua`) — no XML, no external libs, no dependencies
+- Reads click bindings at runtime via `C_ClickBindings.GetProfileInfo()`
+- Resolves both direct spell bindings (type 1) and macro bindings (type 2, via `GetMacroSpell`)
+- Creates icon frames parented to a movable container, with cooldown overlays
+- Cooldowns are event-driven (`SPELL_UPDATE_COOLDOWN`), not polled
+- Settings panel registered via `Settings.RegisterCanvasLayoutCategory`
+- Position, scale, and debug mode saved per-character in `ClickCastCheatSheetDB`
+- Auto-refreshes icons on spec change (`ACTIVE_TALENT_GROUP_CHANGED`)
+- Slash command: `/cccs debug` (toggle debug), `/cccs reload` (refresh bindings)
+
+## How to Test
+
+This addon folder IS the live WoW addon directory. To test changes:
+1. Edit the `.lua` file
+2. In WoW: `/reload`
+3. Check for errors in chat or with `/cccs debug`
+4. Open settings: ESC > Options > AddOns > ClickCastCheatSheet
 
 ## Workflow: Versioning & Releases
 
