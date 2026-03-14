@@ -485,90 +485,193 @@ SlashCmdList["CLICKCASTCHEATSHEET"] = HandleSlashCommand
 -- SETTINGS PANEL CREATION
 -- =========================================================================
 
-local function CreateSettingsPanel()
-    local container = CreateFrame("Frame");
-    container:SetSize(600, 150);
-    
-    -- Debug mode checkbox
-    local debugCheckbox = CreateFrame("CheckButton", nil, container);
-    debugCheckbox:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -10);
-    debugCheckbox:SetSize(24, 24);
-    
-    -- Create checkbox texture
-    debugCheckbox:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up");
-    debugCheckbox:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down");
-    debugCheckbox:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight");
-    debugCheckbox:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check");
-    debugCheckbox:SetDisabledCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check-Disabled");
-    
-    local debugLabel = container:CreateFontString(nil, "OVERLAY", "GameFontNormal");
-    debugLabel:SetPoint("LEFT", debugCheckbox, "RIGHT", 10, 0);
-    debugLabel:SetText("Enable Debug Mode");
-    
-    -- Update checkbox from saved variables
-    local function UpdateDebugCheckbox()
-        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
-        debugCheckbox:SetChecked(ClickCastCheatSheetDB.debugMode or false);
-    end
-    
-    -- Handle checkbox changes
-    debugCheckbox:SetScript("OnClick", function(self)
-        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
-        DEBUG = self:GetChecked();
-        ClickCastCheatSheetDB.debugMode = DEBUG;
-        if DEBUG then
-            print(ADDON_NAME .. ": Debug mode enabled");
-        else
-            print(ADDON_NAME .. ": Debug mode disabled");
-        end
-    end);
-    
-    -- Initialize checkbox state when settings panel opens
-    debugCheckbox:SetScript("OnShow", UpdateDebugCheckbox);
-    
-    -- Scale slider
-    local scaleLabel = container:CreateFontString(nil, "OVERLAY", "GameFontNormal");
-    scaleLabel:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -50);
-    scaleLabel:SetText("Icon Scale:");
-    
-    local scaleSlider = CreateFrame("Slider", nil, container, "OptionsSliderTemplate");
-    scaleSlider:SetPoint("TOPLEFT", scaleLabel, "BOTTOMLEFT", 0, -15);
-    scaleSlider:SetWidth(200);
-    scaleSlider:SetMinMaxValues(0.5, 3.0);
-    scaleSlider:SetValueStep(0.1);
-    scaleSlider:SetObeyStepOnDrag(true);
-    
-    local scaleValueText = container:CreateFontString(nil, "OVERLAY", "GameFontNormal");
-    scaleValueText:SetPoint("LEFT", scaleSlider, "RIGHT", 10, 0);
-    scaleValueText:SetText("1.0x");
-    
-    local function UpdateScaleDisplay()
-        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
-        local savedScale = ClickCastCheatSheetDB.scale or 1.0
-        scaleSlider:SetValue(savedScale)
-        scaleValueText:SetText(string.format("%.1f", savedScale) .. "x")
-    end
-    
-    scaleSlider:SetScript("OnValueChanged", function(self, value, userInput)
+-- Helper: creates a slider with an editable text input next to it
+-- Returns the slider frame and editbox frame
+local function CreateSliderWithEditBox(parent, label, minVal, maxVal, step, width, anchorFrame, anchorY)
+    local sliderLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    sliderLabel:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, anchorY)
+    sliderLabel:SetText(label)
+
+    local slider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
+    slider:SetPoint("TOPLEFT", sliderLabel, "BOTTOMLEFT", 0, -15)
+    slider:SetWidth(width)
+    slider:SetMinMaxValues(minVal, maxVal)
+    slider:SetValueStep(step)
+    slider:SetObeyStepOnDrag(true)
+
+    local editBox = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+    editBox:SetPoint("LEFT", slider, "RIGHT", 15, 0)
+    editBox:SetSize(60, 20)
+    editBox:SetAutoFocus(false)
+    editBox:SetFontObject("GameFontHighlightSmall")
+    editBox:SetJustifyH("CENTER")
+
+    -- Sync editbox text while dragging
+    slider:SetScript("OnValueChanged", function(self, value, userInput)
         if userInput then
-            scaleValueText:SetText(string.format("%.1f", value) .. "x")
+            editBox:SetText(string.format("%.1f", value))
         end
-    end);
+    end)
+
+    -- Pressing enter in editbox updates the slider
+    editBox:SetScript("OnEnterPressed", function(self)
+        local val = tonumber(self:GetText())
+        if val then
+            val = math.max(minVal, math.min(maxVal, val))
+            slider:SetValue(val)
+            self:SetText(string.format("%.1f", val))
+        else
+            self:SetText(string.format("%.1f", slider:GetValue()))
+        end
+        self:ClearFocus()
+    end)
+
+    editBox:SetScript("OnEscapePressed", function(self)
+        self:SetText(string.format("%.1f", slider:GetValue()))
+        self:ClearFocus()
+    end)
+
+    return slider, editBox, sliderLabel
+end
+
+local function CreateSettingsPanel()
+    local container = CreateFrame("Frame")
+    container:SetSize(600, 280)
+
+    -- Debug mode checkbox
+    local debugCheckbox = CreateFrame("CheckButton", nil, container)
+    debugCheckbox:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -10)
+    debugCheckbox:SetSize(24, 24)
+
+    debugCheckbox:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
+    debugCheckbox:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
+    debugCheckbox:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight")
+    debugCheckbox:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
+    debugCheckbox:SetDisabledCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check-Disabled")
+
+    local debugLabel = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    debugLabel:SetPoint("LEFT", debugCheckbox, "RIGHT", 10, 0)
+    debugLabel:SetText("Enable Debug Mode")
+
+    local function UpdateDebugCheckbox()
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {}
+        debugCheckbox:SetChecked(ClickCastCheatSheetDB.debugMode or false)
+    end
+
+    debugCheckbox:SetScript("OnClick", function(self)
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {}
+        DEBUG = self:GetChecked()
+        ClickCastCheatSheetDB.debugMode = DEBUG
+        if DEBUG then
+            print(ADDON_NAME .. ": Debug mode enabled")
+        else
+            print(ADDON_NAME .. ": Debug mode disabled")
+        end
+    end)
+
+    debugCheckbox:SetScript("OnShow", UpdateDebugCheckbox)
+
+    -- Scale slider with editbox
+    local scaleSlider, scaleEditBox, scaleLabel = CreateSliderWithEditBox(
+        container, "Icon Scale:", 0.5, 3.0, 0.1, 200, container, -40
+    )
 
     scaleSlider:SetScript("OnMouseUp", function(self)
         local value = self:GetValue()
         SCALE_MULTIPLIER = value
-        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {}
         ClickCastCheatSheetDB.scale = value
         ReinitializeFrames()
-    end);
-    
-    -- Initialize slider state when settings panel opens
-    scaleSlider:SetScript("OnShow", UpdateScaleDisplay);
-    
-    local category = Settings.RegisterCanvasLayoutCategory(container, ADDON_NAME);
-    category.ID = ADDON_NAME;
-    Settings.RegisterAddOnCategory(category);
+    end)
+
+    scaleEditBox:HookScript("OnEnterPressed", function(self)
+        local value = tonumber(self:GetText())
+        if value then
+            value = math.max(0.5, math.min(3.0, value))
+            SCALE_MULTIPLIER = value
+            ClickCastCheatSheetDB = ClickCastCheatSheetDB or {}
+            ClickCastCheatSheetDB.scale = value
+            ReinitializeFrames()
+        end
+    end)
+
+    -- Position X slider with editbox
+    local xSlider, xEditBox, xLabel = CreateSliderWithEditBox(
+        container, "Position X:", -2000, 2000, 1, 200, scaleLabel, -40
+    )
+
+    local function ApplyPosition()
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {}
+        local containerFrame = _G[ADDON_NAME .. "ContainerFrame"]
+        if containerFrame then
+            containerFrame:ClearAllPoints()
+            containerFrame:SetPoint("CENTER", UIParent, "CENTER", ClickCastCheatSheetDB.x or 0, ClickCastCheatSheetDB.y or 0)
+        end
+    end
+
+    xSlider:SetScript("OnMouseUp", function(self)
+        local value = self:GetValue()
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {}
+        ClickCastCheatSheetDB.x = value
+        ApplyPosition()
+    end)
+
+    xEditBox:HookScript("OnEnterPressed", function(self)
+        local value = tonumber(self:GetText())
+        if value then
+            value = math.max(-2000, math.min(2000, value))
+            ClickCastCheatSheetDB = ClickCastCheatSheetDB or {}
+            ClickCastCheatSheetDB.x = value
+            xSlider:SetValue(value)
+            ApplyPosition()
+        end
+    end)
+
+    -- Position Y slider with editbox
+    local ySlider, yEditBox, yLabel = CreateSliderWithEditBox(
+        container, "Position Y:", -2000, 2000, 1, 200, xLabel, -40
+    )
+
+    ySlider:SetScript("OnMouseUp", function(self)
+        local value = self:GetValue()
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {}
+        ClickCastCheatSheetDB.y = value
+        ApplyPosition()
+    end)
+
+    yEditBox:HookScript("OnEnterPressed", function(self)
+        local value = tonumber(self:GetText())
+        if value then
+            value = math.max(-2000, math.min(2000, value))
+            ClickCastCheatSheetDB = ClickCastCheatSheetDB or {}
+            ClickCastCheatSheetDB.y = value
+            ySlider:SetValue(value)
+            ApplyPosition()
+        end
+    end)
+
+    -- OnShow: sync all controls from saved variables
+    container:SetScript("OnShow", function()
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {}
+        -- Debug checkbox
+        debugCheckbox:SetChecked(ClickCastCheatSheetDB.debugMode or false)
+        -- Scale
+        local savedScale = ClickCastCheatSheetDB.scale or 1.0
+        scaleSlider:SetValue(savedScale)
+        scaleEditBox:SetText(string.format("%.1f", savedScale))
+        -- Position X
+        local savedX = ClickCastCheatSheetDB.x or 0
+        xSlider:SetValue(savedX)
+        xEditBox:SetText(string.format("%.1f", savedX))
+        -- Position Y
+        local savedY = ClickCastCheatSheetDB.y or 0
+        ySlider:SetValue(savedY)
+        yEditBox:SetText(string.format("%.1f", savedY))
+    end)
+
+    local category = Settings.RegisterCanvasLayoutCategory(container, ADDON_NAME)
+    category.ID = ADDON_NAME
+    Settings.RegisterAddOnCategory(category)
 end
 
 -- =========================================================================
@@ -576,21 +679,25 @@ end
 -- =========================================================================
 
 -- Handle initialization - PLAYER_LOGIN for first load, ADDON_LOADED for reloads
-eventFrame:RegisterEvent("PLAYER_LOGIN");
-eventFrame:RegisterEvent("ADDON_LOADED");
-eventFrame:SetScript("OnEvent", function(self, event, addonName)
+eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
+eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
-        -- On /reload, reset initialization flag to allow reinit
+        local addonName = ...
         if addonName == ADDON_NAME then
             isInitialized = false
-            -- Clear cooldown tracking on reload
             table.wipe(SPELL_COOLDOWNS)
             table.wipe(LAST_COOLDOWN_STATE)
-            DebugPrint("Addon reloaded via /reload, resetting initialization")
+            DebugPrint("Addon loaded, resetting initialization")
         end
     elseif event == "PLAYER_LOGIN" then
-        -- First load - initialize when all APIs are ready
         OnInitializationEvent(self, event)
         CreateSettingsPanel()
+    elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
+        if isInitialized then
+            DebugPrint("Spec changed, refreshing click bindings...")
+            ReinitializeFrames()
+        end
     end
-end);
+end)
