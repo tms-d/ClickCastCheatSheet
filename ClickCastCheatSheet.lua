@@ -487,14 +487,17 @@ SlashCmdList["CLICKCASTCHEATSHEET"] = HandleSlashCommand
 
 -- Helper: creates a slider with an editable text input next to it
 -- Returns the slider frame and editbox frame
-local function CreateSliderWithEditBox(parent, label, minVal, maxVal, step, width, anchorFrame, anchorY)
+local function CreateSliderWithEditBox(parent, label, minVal, maxVal, step, width, anchorFrame, anchorOffsetY)
     local sliderLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    sliderLabel:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, anchorY)
+    sliderLabel:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, anchorOffsetY)
     sliderLabel:SetText(label)
 
     local slider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
-    slider:SetPoint("TOPLEFT", sliderLabel, "BOTTOMLEFT", 0, -15)
+    slider:SetPoint("TOPLEFT", sliderLabel, "BOTTOMLEFT", 0, -10)
     slider:SetWidth(width)
+    -- Hide the default Low/High labels to save vertical space
+    if slider.Low then slider.Low:SetText("") end
+    if slider.High then slider.High:SetText("") end
     slider:SetMinMaxValues(minVal, maxVal)
     slider:SetValueStep(step)
     slider:SetObeyStepOnDrag(true)
@@ -573,7 +576,7 @@ local function CreateSettingsPanel()
 
     -- Scale slider with editbox
     local scaleSlider, scaleEditBox, scaleLabel = CreateSliderWithEditBox(
-        container, "Icon Scale:", 0.5, 3.0, 0.1, 200, container, -40
+        container, "Icon Scale:", 0.5, 3.0, 0.1, 200, debugCheckbox, -10
     )
 
     scaleSlider:SetScript("OnMouseUp", function(self)
@@ -597,7 +600,7 @@ local function CreateSettingsPanel()
 
     -- Position X slider with editbox
     local xSlider, xEditBox, xLabel = CreateSliderWithEditBox(
-        container, "Position X:", -2000, 2000, 1, 200, scaleLabel, -40
+        container, "Position X:", -2000, 2000, 1, 200, scaleSlider, -20
     )
 
     local function ApplyPosition()
@@ -629,7 +632,7 @@ local function CreateSettingsPanel()
 
     -- Position Y slider with editbox
     local ySlider, yEditBox, yLabel = CreateSliderWithEditBox(
-        container, "Position Y:", -2000, 2000, 1, 200, xLabel, -40
+        container, "Position Y:", -2000, 2000, 1, 200, xSlider, -20
     )
 
     ySlider:SetScript("OnMouseUp", function(self)
