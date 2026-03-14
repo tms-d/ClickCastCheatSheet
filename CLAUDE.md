@@ -26,9 +26,19 @@ This addon folder IS the live WoW addon directory. To test changes:
 3. Check for errors in chat or with `/cccs debug`
 4. Open settings: ESC > Options > AddOns > ClickCastCheatSheet
 
-## Workflow: Versioning & Releases
+## Workflow: Branching & Releases
 
-When work is completed and merged to `main`, always:
+**IMPORTANT: Never make changes directly on `main`.** This folder is the live WoW addon directory.
+
+### Development flow
+1. Before making any code changes, check the current branch with `git branch --show-current`
+2. If on `main`, create and switch to a feature/fix branch first (e.g. `git checkout -b fix/slider-layout`)
+3. Make changes on the branch, have the user test in WoW via `/reload`
+4. Only merge to `main` once the user confirms everything works
+5. After merging: tag and push (see below)
+
+### Versioning
+When work is merged to `main`, always:
 1. Tag the commit with a version increment using `git tag X.Y.Z` (no `v` prefix)
 2. Push the tag with `git push origin X.Y.Z`
 3. Use semantic versioning:
