@@ -28,6 +28,8 @@ local SCALE_MULTIPLIER = 1.0;
 local BORDER = 1;
 -- Debug mode flag
 local DEBUG = false;
+-- Lock mode flag (prevents dragging when true)
+local LOCKED = false;
 
 -- Helper function to print only when debug mode is enabled
 local function DebugPrint(msg)
@@ -41,8 +43,21 @@ local function Round(n)
     return math.floor((n) + 0.5)
 end
 
+-- Module-level reference to the container frame so lock/unlock can access it
+local containerFrameRef = nil;
+
+-- Apply or remove drag behavior based on LOCKED state
+local function ApplyLockState(frame)
+    if not frame then return end
+    if LOCKED then
+        frame:EnableMouse(false)
+    else
+        frame:EnableMouse(true)
+    end
+end
+
 -- Saved-variables table (populated by WoW when declared in the .toc)
--- ClickCastCheatSheetDB = { x = <number>, y = <number>, debugMode = <boolean> }
+-- ClickCastCheatSheetDB = { x = <number>, y = <number>, debugMode = <boolean>, locked = <boolean> }
 
 -- Vertical displacement for modifier icons relative to the base icon center.
 local MOD_OFFSET = (B_SIZE / 2) + (M_SIZE / 2) + SPACING; 
@@ -236,6 +251,12 @@ local function InitializeWorker()
         DebugPrint("Loaded debug mode from saved variables: " .. tostring(DEBUG))
     end
     
+    -- Load locked state from saved variables
+    if type(ClickCastCheatSheetDB.locked) == "boolean" then
+        LOCKED = ClickCastCheatSheetDB.locked
+        DebugPrint("Loaded locked state from saved variables: " .. tostring(LOCKED))
+    end
+
     -- Load scale multiplier from saved variables
     if type(ClickCastCheatSheetDB.scale) == "number" then
         SCALE_MULTIPLIER = ClickCastCheatSheetDB.scale
@@ -255,6 +276,8 @@ local function InitializeWorker()
     f_container:SetUserPlaced(true);
     f_container:EnableMouse(true);
     f_container:RegisterForDrag("LeftButton");
+    containerFrameRef = f_container;
+    ApplyLockState(f_container);
     f_container:SetScript("OnDragStart", f_container.StartMoving);
     -- When the user stops dragging, stop moving and save the center offsets
     f_container:SetScript("OnDragStop", function(self)
@@ -470,10 +493,24 @@ local function HandleSlashCommand(msg)
     elseif command == "reload" then
         print(ADDON_NAME .. ": Refreshing click bindings...")
         ReinitializeFrames()
+    elseif command == "lock" then
+        LOCKED = true
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {}
+        ClickCastCheatSheetDB.locked = true
+        ApplyLockState(containerFrameRef)
+        print(ADDON_NAME .. ": Position locked")
+    elseif command == "unlock" then
+        LOCKED = false
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {}
+        ClickCastCheatSheetDB.locked = false
+        ApplyLockState(containerFrameRef)
+        print(ADDON_NAME .. ": Position unlocked")
     else
         print(ADDON_NAME .. ": Unknown command: " .. msg)
         print("Usage: /cccs debug - Toggle debug mode")
         print("Usage: /cccs reload - Refresh click bindings")
+        print("Usage: /cccs lock - Lock icon position")
+        print("Usage: /cccs unlock - Unlock icon position")
     end
 end
 
@@ -574,9 +611,36 @@ local function CreateSettingsPanel()
 
     debugCheckbox:SetScript("OnShow", UpdateDebugCheckbox)
 
+    -- Lock position checkbox
+    local lockCheckbox = CreateFrame("CheckButton", nil, container)
+    lockCheckbox:SetPoint("TOPLEFT", debugCheckbox, "BOTTOMLEFT", 0, -5)
+    lockCheckbox:SetSize(24, 24)
+
+    lockCheckbox:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
+    lockCheckbox:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
+    lockCheckbox:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight")
+    lockCheckbox:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
+    lockCheckbox:SetDisabledCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check-Disabled")
+
+    local lockLabel = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    lockLabel:SetPoint("LEFT", lockCheckbox, "RIGHT", 10, 0)
+    lockLabel:SetText("Lock Position")
+
+    lockCheckbox:SetScript("OnClick", function(self)
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {}
+        LOCKED = self:GetChecked()
+        ClickCastCheatSheetDB.locked = LOCKED
+        ApplyLockState(containerFrameRef)
+        if LOCKED then
+            print(ADDON_NAME .. ": Position locked")
+        else
+            print(ADDON_NAME .. ": Position unlocked")
+        end
+    end)
+
     -- Scale slider with editbox
     local scaleSlider, scaleEditBox, scaleLabel = CreateSliderWithEditBox(
-        container, "Icon Scale:", 0.5, 3.0, 0.1, 200, debugCheckbox, -10
+        container, "Icon Scale:", 0.5, 3.0, 0.1, 200, lockCheckbox, -10
     )
 
     scaleSlider:SetScript("OnMouseUp", function(self)
@@ -658,6 +722,8 @@ local function CreateSettingsPanel()
         ClickCastCheatSheetDB = ClickCastCheatSheetDB or {}
         -- Debug checkbox
         debugCheckbox:SetChecked(ClickCastCheatSheetDB.debugMode or false)
+        -- Lock checkbox
+        lockCheckbox:SetChecked(ClickCastCheatSheetDB.locked or false)
         -- Scale
         local savedScale = ClickCastCheatSheetDB.scale or 1.0
         scaleSlider:SetValue(savedScale)
