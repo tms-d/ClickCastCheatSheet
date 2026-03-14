@@ -551,13 +551,16 @@ local function CreateSettingsPanel()
     
     scaleSlider:SetScript("OnValueChanged", function(self, value, userInput)
         if userInput then
-            SCALE_MULTIPLIER = value
-            ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
-            ClickCastCheatSheetDB.scale = value
             scaleValueText:SetText(string.format("%.1f", value) .. "x")
-            print(ADDON_NAME .. ": Scale set to " .. string.format("%.1f", value) .. "x")
-            ReinitializeFrames()
         end
+    end);
+
+    scaleSlider:SetScript("OnMouseUp", function(self)
+        local value = self:GetValue()
+        SCALE_MULTIPLIER = value
+        ClickCastCheatSheetDB = ClickCastCheatSheetDB or {};
+        ClickCastCheatSheetDB.scale = value
+        ReinitializeFrames()
     end);
     
     -- Initialize slider state when settings panel opens
